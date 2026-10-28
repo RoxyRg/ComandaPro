@@ -8,6 +8,7 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY app ./app
 COPY tests ./tests
+COPY pytest.ini ./pytest.ini
 RUN pytest -q
 USER appuser
 EXPOSE 8000
