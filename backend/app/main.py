@@ -323,6 +323,50 @@ def _seed_database(session: Session, admin_email: str, admin_password: str) -> N
     session.commit()
 
 
+AUDIT_NAMES = {"productos": "producto", "categorias": "categoria", "insumos": "insumo", "mesas": "mesa", "usuarios": "usuario", "roles": "rol", "permisos": "permiso", "sucursales": "sucursal"}
+AUDIT_VERBS = {"CREAR": "Creó", "EDITAR": "Editó", "ELIMINAR": "Eliminó"}
+
+
+def describe_audit(method: str, path: str) -> tuple[str, str, int | None, str]:
+    parts = [p for p in path.strip("/").split("/") if p and p != "api"]
+    ids = [int(p) for p in parts if p.isdigit()]
+    names = [p for p in parts if not p.isdigit()]
+    ref = ids[0] if ids else None
+    action = {"POST": "CREAR", "PUT": "EDITAR", "PATCH": "EDITAR", "DELETE": "ELIMINAR"}.get(method, method)
+    if names == ["auth", "login"]:
+        return "ACCESO", "sesion", None, "Inició sesión"
+    if names[:1] == ["ordenes"]:
+        tail = names[1:]
+        if not tail:
+            return "CREAR", "orden", None, "Creó una orden"
+        if tail == ["enviar-cocina"]:
+            return "EDITAR", "orden", ref, f"Envió la orden #{ref} a cocina"
+        if tail == ["servir"]:
+            return "EDITAR", "orden", ref, f"Marcó la orden #{ref} como servida"
+        if tail == ["cancelar"]:
+            return "EDITAR", "orden", ref, f"Canceló la orden #{ref}"
+        if tail == ["pagos"]:
+            return "CREAR", "pago", ref, f"Registró un pago de la orden #{ref}"
+        if tail == ["detalles"]:
+            if len(ids) == 1:
+                return "CREAR", "platillo", ref, f"Agregó un platillo a la orden #{ref}"
+            detail_id = ids[1]
+            if method == "DELETE":
+                return "ELIMINAR", "platillo", detail_id, f"Canceló el platillo #{detail_id} de la orden #{ref}"
+            return "EDITAR", "platillo", detail_id, f"Modificó el platillo #{detail_id} de la orden #{ref}"
+    if names[:1] == ["cocina"]:
+        return "EDITAR", "platillo", ref, f"Cambió el estado del platillo #{ref} en cocina"
+    if names[:1] == ["inventario"]:
+        return "CREAR", "movimiento_inventario", ref, f"Registró un movimiento del inventario #{ref}"
+    if names[-1:] == ["receta"]:
+        return "EDITAR", "receta", ref, f"Actualizó la receta del producto #{ref}"
+    if names[-1:] == ["permisos"] and ids:
+        return "EDITAR", "rol", ref, f"Actualizó los permisos del rol #{ref}"
+    noun = AUDIT_NAMES.get(names[-1], names[-1]) if names else "registro"
+    suffix = f" #{ref}" if ref else ""
+    return action, noun, ref, f"{AUDIT_VERBS.get(action, action)} {noun}{suffix}"
+
+
 def create_app(database_url: str | None = None, initialize: bool = True) -> FastAPI:
     engine = build_engine(database_url)
     SessionLocal = build_session_factory(engine)
@@ -400,11 +444,10 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
             user_id = getattr(request.state, "user_id", None)
             if user_id and not path.endswith(("/auth/refresh", "/auth/logout")):
                 try:
-                    parts = [p for p in path.strip("/").split("/") if p]
-                    entity = parts[1] if len(parts) > 1 and parts[0] == "api" else (parts[0] if parts else "unknown")
-                    entity_id = next((p for p in reversed(parts) if p.isdigit()), None)
+                    accion, entidad, entidad_id, descripcion = describe_audit(request.method, path)
+                    entidad_id = getattr(request.state, "audit_ref", None) or entidad_id
                     with request.app.state.SessionLocal() as audit_db:
-                        audit_db.add(Bitacora(usuario_id=user_id, accion=request.method, entidad=entity[:100], entidad_id=entity_id, datos_json={"ruta": path, "status": response.status_code, "metodo": request.method}))
+                        audit_db.add(Bitacora(usuario_id=user_id, accion=accion, entidad=entidad, entidad_id=entidad_id, datos_json={"descripcion": descripcion, "ruta": path, "metodo": request.method, "status": response.status_code}))
                         audit_db.commit()
                 except Exception:
                     # An audit failure must not transform an otherwise successful API response.
@@ -812,7 +855,7 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
         return [order_view(db, x) for x in q.limit(300).all()]
 
     @app.post("/api/ordenes", status_code=201)
-    async def create_order(body: OrdenCreate, user: Usuario = Depends(require_permission("ordenes.crear")), db: Session = Depends(get_db)):
+    async def create_order(body: OrdenCreate, request: Request, user: Usuario = Depends(require_permission("ordenes.crear")), db: Session = Depends(get_db)):
         table = db.query(Mesa).filter_by(id=body.mesa_id, sucursal_id=user.sucursal_id).with_for_update().one_or_none()
         if not table: raise HTTPException(status_code=404, detail="Mesa no encontrada en su sucursal")
         if table.estado != "LIBRE": raise HTTPException(status_code=409, detail="La mesa no está libre")
@@ -824,6 +867,7 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
             db.add(DetalleOrden(orden_id=order.id, producto_id=product.id, cantidad=line.cantidad, precio_unitario=product.precio, notas=line.notas, estado="PENDIENTE"))
         table.estado = "OCUPADA"
         db.flush(); recalculate_order(db, order); db.commit(); db.refresh(order)
+        request.state.audit_ref = order.id
         result = order_view(db, order)
         await SOCKET.emit("orden_actualizada", result, room=f"sucursal:{user.sucursal_id}")
         return result
@@ -958,7 +1002,7 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
 
     @app.patch("/api/cocina/detalles/{detail_id}/estado")
     async def update_dish_state(detail_id: int, body: DishStateInput, user: Usuario = Depends(require_permission("cocina.actualizar")), db: Session = Depends(get_db)):
-        detail = db.query(DetalleOrden).options(joinedload(DetalleOrden.orden)).filter(DetalleOrden.id == detail_id).with_for_update().one_or_none()
+        detail = db.query(DetalleOrden).options(joinedload(DetalleOrden.orden)).filter(DetalleOrden.id == detail_id).with_for_update(of=DetalleOrden).one_or_none()
         if not detail or detail.orden.sucursal_id != user.sucursal_id: raise HTTPException(status_code=404, detail="Platillo no encontrado en su sucursal")
         if detail.orden.estado != "EN_COCINA": raise HTTPException(status_code=409, detail="La orden no está activa en cocina")
         allowed = {"PENDIENTE": {"PREPARANDO"}, "PREPARANDO": {"LISTO"}}
@@ -1049,9 +1093,15 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
         return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=comandapro_ventas.xlsx"})
 
     @app.get("/api/bitacora")
-    def audit_log(user: Usuario = Depends(require_permission("bitacora.ver")), db: Session = Depends(get_db), limite: int = Query(default=100, ge=1, le=500)):
+    def audit_log(user: Usuario = Depends(require_permission("bitacora.ver")), db: Session = Depends(get_db), limite: int = Query(default=100, ge=1, le=500), accion: str | None = None, entidad: str | None = None, usuario_id: int | None = None, desde: datetime | None = None, hasta: datetime | None = None):
         user_ids = [x.id for x in db.query(Usuario.id).filter(Usuario.sucursal_id == user.sucursal_id).all()]
-        rows = db.query(Bitacora).options(joinedload(Bitacora.usuario)).filter(Bitacora.usuario_id.in_(user_ids)).order_by(Bitacora.fecha.desc()).limit(limite).all()
+        q = db.query(Bitacora).options(joinedload(Bitacora.usuario)).filter(Bitacora.usuario_id.in_(user_ids))
+        if accion: q = q.filter(Bitacora.accion == accion.upper())
+        if entidad: q = q.filter(Bitacora.entidad == entidad)
+        if usuario_id: q = q.filter(Bitacora.usuario_id == usuario_id)
+        if desde: q = q.filter(Bitacora.fecha >= desde)
+        if hasta: q = q.filter(Bitacora.fecha <= hasta)
+        rows = q.order_by(Bitacora.fecha.desc()).limit(limite).all()
         return [{**_payload(x), "usuario": x.usuario.nombre if x.usuario else None} for x in rows]
 
     return app
