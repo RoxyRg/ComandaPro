@@ -1,0 +1,117 @@
+name: comandapro
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Copia .env.example a .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Copia .env.example a .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Copia .env.example a .env}
+    volumes:
+      - comandapro_pgdata:/var/lib/postgresql/data
+    networks: [comandapro-interna]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    cpus: 0.75
+    mem_limit: 512m
+    pids_limit: 160
+
+  api:
+    image: ${COMANDAPRO_API_IMAGE:-comandapro-api:local}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Configura DATABASE_URL en .env}
+      JWT_SECRET: ${JWT_SECRET:?Configura JWT_SECRET en .env}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-7}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      COMANDAPRO_ADMIN_EMAIL: ${COMANDAPRO_ADMIN_EMAIL:-admin@comandapro.local}
+      COMANDAPRO_ADMIN_PASSWORD: ${COMANDAPRO_ADMIN_PASSWORD:?Configura COMANDAPRO_ADMIN_PASSWORD}
+      COMANDAPRO_DEMO_PASSWORD: ${COMANDAPRO_DEMO_PASSWORD:-DemoComanda2026!}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [comandapro-interna]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+      start_period: 25s
+    cpus: 1.0
+    mem_limit: 768m
+    pids_limit: 256
+
+  web:
+    image: ${COMANDAPRO_WEB_IMAGE:-comandapro-web:local}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    networks: [comandapro-interna]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    cpus: 0.5
+    mem_limit: 192m
+    pids_limit: 128
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--web.enable-lifecycle"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [comandapro-interna]
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 128
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Configura GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks: [comandapro-interna]
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 128
+
+networks:
+  comandapro-interna:
+    driver: bridge
+volumes:
+  comandapro_pgdata:
+  prometheus_data:
+  grafana_data:
