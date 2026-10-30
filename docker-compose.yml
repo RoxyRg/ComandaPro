@@ -71,6 +71,23 @@ services:
     mem_limit: 192m
     pids_limit: 128
 
+  cadvisor:
+    image: ghcr.io/google/cadvisor:0.60.6
+    restart: unless-stopped
+    # cAdvisor is internal-only: Prometheus scrapes it via the Compose network.
+    # Host filesystem and Docker state are mounted read-only for observation.
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    command:
+      - --housekeeping_interval=15s
+    networks: [comandapro-interna]
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+
   prometheus:
     image: prom/prometheus:v3.1.0
     restart: unless-stopped

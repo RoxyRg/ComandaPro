@@ -6,3 +6,7 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ["api:8000"]
+  - job_name: comandapro-contenedores
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["cadvisor:8080"]
