@@ -19,15 +19,18 @@ flowchart LR
   A -. red Docker privada .-> D
 ```
 
-Docker Compose administra cinco servicios: `db`, `api`, `web`, `prometheus` y `grafana`. Solamente se publica en la interfaz local del equipo el frontend en el puerto `8080`, Prometheus en `9090` y Grafana en `3001`; PostgreSQL y FastAPI no exponen sus puertos directamente al host.
+Docker Compose administra seis servicios: `db`, `api`, `web`, `cadvisor`, `prometheus` y `grafana`. Solamente se publica en la interfaz local del equipo el frontend en el puerto `8080`, Prometheus en `9090` y Grafana en `3001`; PostgreSQL y FastAPI no exponen sus puertos directamente al host.
 
 | Servicio | Base/imagen | Puerto de host | Restricciones Compose |
 |---|---|---:|---|
 | `db` | `postgres:16-alpine` | Interno `5432` | 0.75 CPU, 512 MiB, 160 procesos |
 | `api` | Imagen construida con Python 3.12 | Interno `8000` | 1 CPU, 768 MiB, 256 procesos |
 | `web` | React compilado y `nginx:1.27-alpine` | `127.0.0.1:8080` | 0.5 CPU, 192 MiB, 128 procesos |
+| `cadvisor` | `ghcr.io/google/cadvisor:0.60.6` | Interno `8080` | 0.5 CPU, 512 MiB, 128 procesos |
 | `prometheus` | `prom/prometheus:v3.1.0` | `127.0.0.1:9090` | 0.5 CPU, 256 MiB, 128 procesos |
 | `grafana` | `grafana/grafana:11.4.0` | `127.0.0.1:3001` | 0.5 CPU, 256 MiB, 128 procesos |
+
+cAdvisor obtiene datos de uso de CPU, memoria y red de contenedores con montajes de observación de solo lectura. No publica su puerto al host; Prometheus accede por la red interna. Los montajes `/sys` y `/var/lib/docker` están orientados a Docker Engine en Linux; en Docker Desktop o en hosts con otro runtime se debe comprobar la disponibilidad de las métricas y adaptar los montajes. El socket Docker no debe exponerse fuera de un entorno de confianza.
 
 La red `comandapro-interna` permite que la API use el nombre de servicio `db` como host PostgreSQL y que Nginx reenvíe `/api/` y `/socket.io/` a `api:8000`. Los healthchecks y `depends_on: condition: service_healthy` controlan el orden de arranque. Los datos de la base, Prometheus y Grafana se conservan en volúmenes nombrados.
 
@@ -268,11 +271,16 @@ docker stats --no-stream
 
 ## 8. Observabilidad con Prometheus y Grafana
 
-FastAPI expone `/metrics` con un contador de solicitudes por método, ruta y código HTTP, además de un histograma de latencia. Prometheus obtiene esas métricas de `api:8000/metrics` cada 15 segundos. Grafana tiene un dashboard aprovisionado con:
+FastAPI expone `/metrics` con un contador de solicitudes por método, ruta y código HTTP, además de un histograma de latencia. Prometheus obtiene esas métricas de `api:8000/metrics` cada 15 segundos y también recoge métricas de cAdvisor en `cadvisor:8080/metrics`. Grafana tiene un dashboard aprovisionado con:
 
 - tasa de solicitudes HTTP agrupadas por código;
 - latencia aproximada p95 de solicitudes;
-- respuestas de error 5xx.
+- respuestas de error 5xx;
+- CPU utilizada por cada servicio Docker (núcleos de CPU);
+- memoria de trabajo por servicio Docker;
+- tráfico de red recibido por servicio.
+
+**Comprobación para la evaluación:** abre `http://127.0.0.1:9090/targets` y verifica que los objetivos `comandapro-api` y `comandapro-contenedores` estén en estado **UP**. En Grafana (`http://127.0.0.1:3001`), abre **ComandaPro - Observabilidad** y comprueba los seis paneles. Si aparecen gráficos vacíos, genera tráfico a la API y espera a que transcurran varias recolecciones; confirma que cAdvisor está ejecutándose y que Docker Engine permite los montajes. Captura los targets y los paneles para la evidencia. Los nombres de las métricas y etiquetas disponibles se pueden comprobar en la página de consulta de Prometheus.
 
 La dirección pública local de Prometheus es `http://127.0.0.1:9090`; Grafana es `http://127.0.0.1:3001`.
 
@@ -307,7 +315,13 @@ git push -u origin main
 
 Después revisa en GitHub que estén publicados `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `.github/workflows/ci.yml`, `monitoring/`, este README y las pruebas. No publiques el archivo `.env`.
 
-## 12. Limitaciones conocidas
+## 12. Entrega de la actividad 3 (instrumento global)
+
+La aplicación emplea **FastAPI (Python), React (TypeScript), PostgreSQL, Docker Compose, GitHub Actions, Prometheus, Grafana y cAdvisor**. El historial de commits, los Dockerfiles y la arquitectura Mermaid son públicos en este repositorio. Antes de entregar, comprueba el pipeline verde en la pestaña Actions, el flujo funcional de mesero a cocina y caja, y los dos objetivos UP de Prometheus. Conserva capturas con fecha de GitHub Actions, Docker Compose, Grafana y el flujo de la aplicación.
+
+**Alcance comprobable del despliegue:** el pipeline construye, prueba y publica imágenes en GitHub Container Registry. También prueba el despliegue local en un runner efímero mediante Compose. El trabajo `deploy-remote` está configurado como opción pero solo se ejecuta al habilitar explícitamente `ENABLE_REMOTE_DEPLOY=true` y proporcionar las credenciales de un servidor. Sin ese servidor, **no se debe afirmar que se desplegó remotamente en producción**. El `README.md` es documentación Markdown; si se entrega como documento impreso se debe aplicar el tamaño carta, márgenes de 2.54 cm y formato tipográfico del instrumento.
+
+## 13. Limitaciones conocidas
 
 - Es un prototipo académico; no se integra con terminales POS ni con un procesador de pagos real.
 - La actualización en tiempo real usa Socket.IO; los flujos HTTP/de negocio se prueban por separado, pero una sesión Socket.IO real entre dos navegadores debe validarse también con Docker arriba.
