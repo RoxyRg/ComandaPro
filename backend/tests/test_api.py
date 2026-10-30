@@ -186,37 +186,35 @@ def test_admin_can_reset_demo_user_password_without_affecting_other_roles():
 
 def test_demo_user_password_reset_is_opt_in_and_keeps_custom_accounts(monkeypatch):
     from app.main import _seed_database
-    from app.models import Rol
-    monkeypatch.setenv("COMANDAPRO_DEMO_PASSWORD", "ClaveDemoAnterior2026*")
     with make_client() as client:
-        admin_token = login(client)
-        admin = {"Authorization": f"Bearer {admin_token}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
         accounts = client.get("/api/admin/usuarios", headers=admin).json()
         mesero = next(u for u in accounts if u["correo"] == "mesero@comandapro.local")
         cocina = next(u for u in accounts if u["correo"] == "cocina@comandapro.local")
         cajero = next(u for u in accounts if u["correo"] == "cajero@comandapro.local")
 
-        # Crear una clave personalizada, que ningun reinicio normal debe sustituir.
         custom = client.post(f"/api/admin/usuarios/{cajero['id']}/reset-password", headers=admin,
                              json={"nueva": "PersonalizadaCajero2026*"})
         assert custom.status_code == 200, custom.text
-        monkeypatch.setenv("COMANDAPRO_DEMO_PASSWORD", "DemoComandaPro2026!")
+        monkeypatch.setenv("COMANDAPRO_DEMO_PASSWORD", "ClaveActualizadaDemo2026*")
 
         with client.app.state.SessionLocal() as db:
             _seed_database(db, ADMIN_EMAIL, ADMIN_PASSWORD)
-
-        assert login(client, mesero["correo"], "ClaveDemoAnterior2026*")
-        assert login(client, cocina["correo"], "ClaveDemoAnterior2026*")
+        assert login(client, mesero["correo"], "DemoComandaPro2026!")
+        assert login(client, cocina["correo"], "DemoComandaPro2026!")
         assert login(client, cajero["correo"], "PersonalizadaCajero2026*")
 
         monkeypatch.setenv("COMANDAPRO_RESET_DEMO_PASSWORDS_ON_STARTUP", "true")
         with client.app.state.SessionLocal() as db:
             _seed_database(db, ADMIN_EMAIL, ADMIN_PASSWORD)
-        assert client.post("/api/auth/login", json={"correo":mesero["correo"],"password":"ClaveDemoAnterior2026*"}).status_code == 401
-        assert login(client, mesero["correo"], "DemoComandaPro2026!")
-        assert login(client, cocina["correo"], "DemoComandaPro2026!")
-        assert login(client, cajero["correo"], "DemoComandaPro2026!")
+        assert client.post("/api/auth/login", json={
+            "correo": mesero["correo"], "password": "DemoComandaPro2026!",
+        }).status_code == 401
+        assert login(client, mesero["correo"], "ClaveActualizadaDemo2026*")
+        assert login(client, cocina["correo"], "ClaveActualizadaDemo2026*")
+        assert login(client, cajero["correo"], "ClaveActualizadaDemo2026*")
         assert login(client)
+
 
 def test_order_stock_kitchen_and_split_payment_lifecycle():
     with make_client() as client:
