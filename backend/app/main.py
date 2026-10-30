@@ -126,6 +126,10 @@ class PasswordChangeInput(BaseModel):
     nueva: str = Field(min_length=16, max_length=128)
 
 
+class AdminPasswordResetInput(BaseModel):
+    nueva: str = Field(min_length=16, max_length=128)
+
+
 class RoleInput(BaseModel):
     nombre: str = Field(min_length=2, max_length=40, pattern="^[A-Za-zÁÉÍÓÚÑáéíóúñ_ ]+$")
 
@@ -708,6 +712,24 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
             db.rollback(); raise HTTPException(status_code=409, detail="Correo duplicado")
         db.refresh(obj)
         return _user_payload(obj, permissions_for(db, obj))
+
+    @app.post("/api/admin/usuarios/{user_id}/reset-password")
+    def reset_user_password(user_id: int, body: AdminPasswordResetInput, admin: Usuario = Depends(require_permission("usuarios.editar")), db: Session = Depends(get_db)):
+        if not admin.rol or admin.rol.nombre != "ADMIN":
+            raise HTTPException(status_code=403, detail="Solo administración puede restablecer contraseñas")
+        if user_id == admin.id:
+            raise HTTPException(status_code=400, detail="Utiliza Mi cuenta para cambiar tu propia contraseña")
+        target = db.query(Usuario).options(joinedload(Usuario.rol)).filter(Usuario.id == user_id).one_or_none()
+        if not target or ("usuarios.ver_todas" not in permissions_for(db, admin) and target.sucursal_id != admin.sucursal_id):
+            raise HTTPException(status_code=404, detail="Usuario no encontrado en el alcance permitido")
+        if target.rol and target.rol.nombre == "ADMIN":
+            raise HTTPException(status_code=403, detail="No se puede restablecer la clave de otro administrador")
+        target.password_hash = hash_password(body.nueva)
+        db.query(RefreshToken).filter(RefreshToken.usuario_id == target.id, RefreshToken.revocado.is_(False)).update(
+            {RefreshToken.revocado: True}, synchronize_session=False
+        )
+        db.commit()
+        return {"mensaje": "Contraseña restablecida", "usuario_id": target.id}
 
     # Public menu is chain-wide. Operational tables, inventory and orders are branch-scoped.
     @app.get("/api/categorias")

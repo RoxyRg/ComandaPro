@@ -98,6 +98,91 @@ def test_branch_scoping_for_operational_tables():
         assert {x["sucursal_id"] for x in branch2_tables.json()} == {2}
 
 
+def test_each_role_completes_end_to_end_order_kitchen_payment_flow():
+    with make_client() as client:
+        mesero = {"Authorization": f"Bearer {login(client, 'mesero@comandapro.local', 'DemoComanda2026!')}"}
+        cocina = {"Authorization": f"Bearer {login(client, 'cocina@comandapro.local', 'DemoComanda2026!')}"}
+        cajero = {"Authorization": f"Bearer {login(client, 'cajero@comandapro.local', 'DemoComanda2026!')}"}
+        admin = {"Authorization": f"Bearer {login(client)}"}
+
+        assert client.get("/api/auth/me", headers=mesero).json()["rol"] == "MESERO"
+        assert client.get("/api/auth/me", headers=cocina).json()["rol"] == "COCINA"
+        assert client.get("/api/auth/me", headers=cajero).json()["rol"] == "CAJERO"
+
+        # Cada rol tiene permisos diferenciados.
+        assert client.get("/api/admin/usuarios", headers=mesero).status_code == 403
+        assert client.get("/api/inventario", headers=cocina).status_code == 403
+        assert client.post("/api/ordenes", headers=cajero, json={"mesa_id": 1, "detalles": []}).status_code == 403
+
+        product = next(p for p in client.get("/api/productos", headers=mesero).json() if p["nombre"] == "Hamburguesa Comanda")
+        mesa = next(t for t in client.get("/api/mesas", headers=mesero).json() if t["estado"] == "LIBRE")
+        beef_before = next(i["existencia"] for i in client.get("/api/inventario", headers=admin).json() if i["insumo"] == "Carne de res")
+
+        created = client.post("/api/ordenes", headers=mesero, json={
+            "mesa_id": mesa["id"],
+            "detalles": [{"producto_id": product["id"], "cantidad": 1, "notas": "Prueba por roles"}],
+        })
+        assert created.status_code == 201, created.text
+        order_id = created.json()["id"]
+        detail_id = created.json()["detalles"][0]["id"]
+
+        sent = client.post(f"/api/ordenes/{order_id}/enviar-cocina", headers=mesero)
+        assert sent.status_code == 200, sent.text
+        assert sent.json()["estado"] == "EN_COCINA"
+
+        kitchen_orders = client.get("/api/cocina/ordenes", headers=cocina)
+        assert kitchen_orders.status_code == 200, kitchen_orders.text
+        assert order_id in [o["id"] for o in kitchen_orders.json()]
+        assert client.patch(f"/api/cocina/detalles/{detail_id}/estado", headers=mesero, json={"estado": "PREPARANDO"}).status_code == 403
+        assert client.patch(f"/api/cocina/detalles/{detail_id}/estado", headers=cocina, json={"estado": "PREPARANDO"}).status_code == 200
+        ready = client.patch(f"/api/cocina/detalles/{detail_id}/estado", headers=cocina, json={"estado": "LISTO"})
+        assert ready.status_code == 200, ready.text
+
+        served = client.post(f"/api/ordenes/{order_id}/servir", headers=mesero)
+        assert served.status_code == 200, served.text
+        assert served.json()["estado"] == "SERVIDA"
+
+        pending = client.get("/api/pagos/ordenes-abiertas", headers=cajero)
+        assert pending.status_code == 200, pending.text
+        assert order_id in [o["id"] for o in pending.json()]
+        total = float(served.json()["total"])
+        assert client.post(f"/api/ordenes/{order_id}/pagos", headers=cocina, json={"metodo": "EFECTIVO", "monto": total}).status_code == 403
+        paid = client.post(f"/api/ordenes/{order_id}/pagos", headers=cajero, json={"metodo": "EFECTIVO", "monto": total})
+        assert paid.status_code == 201, paid.text
+        assert paid.json()["cerrada"] is True
+        assert paid.json()["orden"]["estado"] == "PAGADA"
+
+        mesa_final = next(t for t in client.get("/api/mesas", headers=mesero).json() if t["id"] == mesa["id"])
+        assert mesa_final["estado"] == "LIBRE"
+        beef_after = next(i["existencia"] for i in client.get("/api/inventario", headers=admin).json() if i["insumo"] == "Carne de res")
+        assert round(float(beef_before) - float(beef_after), 3) == 0.180
+        sales = client.get("/api/reportes/ventas", headers=cajero)
+        assert sales.status_code == 200
+        assert any(float(x["ventas"]) >= total for x in sales.json())
+
+
+def test_admin_can_reset_demo_user_password_without_affecting_other_roles():
+    with make_client() as client:
+        admin = {"Authorization": f"Bearer {login(client)}"}
+        old_role_password = "DemoComanda2026!"
+        mesero = {"Authorization": f"Bearer {login(client, 'mesero@comandapro.local', old_role_password)}"}
+        assert client.post("/api/admin/usuarios/1/reset-password", headers=mesero, json={
+            "nueva": "NuevaDemoComanda2026!"
+        }).status_code == 403
+
+        users = client.get("/api/admin/usuarios", headers=admin).json()
+        account = next(x for x in users if x["correo"] == "cocina@comandapro.local")
+        reset = client.post(f"/api/admin/usuarios/{account['id']}/reset-password", headers=admin, json={
+            "nueva": "NuevaDemoComanda2026!"
+        })
+        assert reset.status_code == 200, reset.text
+        assert client.post("/api/auth/login", json={
+            "correo": account["correo"], "password": old_role_password
+        }).status_code == 401
+        assert login(client, account["correo"], "NuevaDemoComanda2026!")
+        assert login(client, "mesero@comandapro.local", old_role_password)
+
+
 def test_order_stock_kitchen_and_split_payment_lifecycle():
     with make_client() as client:
         token = login(client)
