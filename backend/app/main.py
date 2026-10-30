@@ -316,8 +316,17 @@ def _seed_database(session: Session, admin_email: str, admin_password: str) -> N
             for n in range(1, 13):
                 session.add(Mesa(sucursal_id=branch.id, numero=n, capacidad=4 if n <= 8 else 6, estado="LIBRE"))
     session.flush()
-    if not session.query(Usuario).filter_by(correo=admin_email.lower()).one_or_none():
+    admin_user = session.query(Usuario).filter_by(correo=admin_email.lower()).one_or_none()
+    if admin_user is None:
         session.add(Usuario(nombre="Administración ComandaPro", correo=admin_email.lower(), password_hash=hash_password(admin_password), rol_id=roles["ADMIN"].id, sucursal_id=1, activo=True))
+    elif (
+        os.getenv("COMANDAPRO_ADMIN_PASSWORD")
+        and admin_password != "CambiaComanda2026!"
+        and verify_password("CambiaComanda2026!", admin_user.password_hash)
+    ):
+        # Migra únicamente la contraseña inicial predeterminada.
+        # No sustituye una contraseña que ya haya sido personalizada.
+        admin_user.password_hash = hash_password(admin_password)
     demo_password = os.getenv("COMANDAPRO_DEMO_PASSWORD", "DemoComanda2026!")
     for role_name, email_prefix in (("MESERO", "mesero"), ("COCINA", "cocina"), ("CAJERO", "cajero")):
         email = f"{email_prefix}@comandapro.local"
@@ -383,6 +392,10 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
     def startup() -> None:
         if not app.state.initialize_db:
             return
+        if os.getenv("COMANDAPRO_SERVE_FRONTEND", "").lower() == "true":
+            admin_secret = os.getenv("COMANDAPRO_ADMIN_PASSWORD", "")
+            if len(admin_secret) < 16 or admin_secret == "CambiaComanda2026!":
+                raise RuntimeError("El despliegue público requiere COMANDAPRO_ADMIN_PASSWORD seguro de al menos 16 caracteres")
         Base.metadata.create_all(bind=engine)
         with SessionLocal() as db:
             _seed_database(db, os.getenv("COMANDAPRO_ADMIN_EMAIL", "admin@comandapro.local"), os.getenv("COMANDAPRO_ADMIN_PASSWORD", "CambiaComanda2026!"))
