@@ -39,6 +39,9 @@ SOCKET_ALLOWED_ORIGINS = [x.strip() for x in os.getenv(
     "CORS_ORIGINS",
     "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173",
 ).split(",") if x.strip()]
+RENDER_ORIGIN = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+if RENDER_ORIGIN and RENDER_ORIGIN not in SOCKET_ALLOWED_ORIGINS:
+    SOCKET_ALLOWED_ORIGINS.append(RENDER_ORIGIN)
 SOCKET = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=SOCKET_ALLOWED_ORIGINS, logger=False, engineio_logger=False)
 _SOCKET_SESSION_FACTORY = None
 
@@ -374,7 +377,7 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
     app.state.engine = engine
     app.state.SessionLocal = SessionLocal
     app.state.initialize_db = initialize
-    app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173").split(","), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(CORSMiddleware, allow_origins=SOCKET_ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
     @app.on_event("startup")
     def startup() -> None:
@@ -1108,6 +1111,12 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
 
 
 api = create_app()
+
+# Render: sirve el frontend compilado en el mismo origen para mantener
+# /api y Socket.IO sin depender de un proxy o de otro servicio gratuito.
+if os.getenv("COMANDAPRO_SERVE_FRONTEND", "").lower() == "true":
+    from fastapi.staticfiles import StaticFiles
+    api.mount("/", StaticFiles(directory="/app/frontend-dist", html=True), name="frontend")
 
 
 @SOCKET.event

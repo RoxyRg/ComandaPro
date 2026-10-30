@@ -7,6 +7,10 @@ from sqlalchemy.pool import StaticPool
 
 def build_engine(url: str | None = None):
     url = url or os.getenv("DATABASE_URL", "sqlite:///./comandapro.db")
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url[len("postgres://"):]
+    elif url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
     kwargs = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}

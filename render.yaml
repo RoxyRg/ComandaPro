@@ -1,0 +1,37 @@
+# Despliegue académico gratuito en Render.
+# La instalacion completa con 6 contenedores y monitoreo sigue en docker-compose.yml.
+services:
+  - type: web
+    name: comandapro-demo
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: comandapro-demo-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: COMANDAPRO_ADMIN_PASSWORD
+        sync: false
+      - key: COMANDAPRO_DEMO_PASSWORD
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COMANDAPRO_SERVE_FRONTEND
+        value: "true"
+
+databases:
+  - name: comandapro-demo-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: "16"
+    databaseName: comandapro
+    user: comandapro
+    ipAllowList: []
