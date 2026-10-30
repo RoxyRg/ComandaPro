@@ -188,7 +188,7 @@ Al iniciar una base nueva preparo una cuenta administrativa y tres usuarios oper
 
 | Rol | Correo | Contraseña de demostración |
 |---|---|---|
-| ADMIN | `admin@comandapro.local` | Privada: `COMANDAPRO_ADMIN_PASSWORD` (Render / .env) |
+| ADMIN | `admin@comandapro.local` | `AdminComandaPro2026` |
 | MESERO | `mesero@comandapro.local` | `DemoComandaPro2026!` |
 | COCINA | `cocina@comandapro.local` | `DemoComandaPro2026!` |
 | CAJERO | `cajero@comandapro.local` | `DemoComandaPro2026!` |
