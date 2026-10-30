@@ -85,7 +85,7 @@ jobs:
       - name: Verify cAdvisor metrics and Prometheus targets
         shell: bash
         run: |
-          docker compose exec -T prometheus sh -c 'wget -q -O - http://cadvisor:8080/metrics' | grep -q 'container_cpu_usage_seconds_total'
+          docker compose exec -T api python -c "import urllib.request; response = urllib.request.urlopen('http://cadvisor:8080/metrics', timeout=10).read(); assert b'container_cpu_usage_seconds_total' in response, 'cAdvisor missing container CPU metrics'"
           for attempt in {1..20}; do
             if curl -fsS 'http://127.0.0.1:9090/api/v1/targets?state=active' | python -c 'import json,sys; data=json.load(sys.stdin); targets={t["labels"].get("job"):t["health"] for t in data["data"]["activeTargets"]}; sys.exit(0 if targets.get("comandapro-api")=="up" and targets.get("comandapro-contenedores")=="up" else 1)'; then
               exit 0
