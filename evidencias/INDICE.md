@@ -12,18 +12,18 @@ Aquí organicé los archivos que respaldan el desarrollo, las pruebas, el monito
 - [Swagger](capturas/17-swagger.png), [movimientos](capturas/18-movimientos-inventario.png), [métricas](capturas/20-prometheus-metricas.png).
 - [Prueba de carga](capturas/22-prueba-carga.png), [persistencia](capturas/23-persistencia.png), [docker stats](capturas/24-docker-stats.png), [historial de commits](capturas/26-historial-commits.png), [estructura del repositorio](capturas/27-repositorio.png).
 
-## Capturas que debo reemplazar con la versión actual
+## Estado de las capturas de infraestructura
 
-Los cuatro archivos siguientes **ya existen**, pero todavía reflejan etapas anteriores:
+El 30 de octubre de 2026 actualicé las siguientes imágenes y comprobé sus contenidos en GitHub, después del [commit `1fad740`](https://github.com/RoxyRg/ComandaPro/commit/1fad740cc3e480c3da59dc81c89224c43dff09bc):
 
-| Archivo | Lo que debe verse en la captura final |
+| Archivo | Estado |
 |---|---|
-| [03-docker-compose-ps.png](capturas/03-docker-compose-ps.png) | Seis servicios incluyendo cAdvisor, estado saludable |
-| [19-prometheus-targets.png](capturas/19-prometheus-targets.png) | `comandapro-api` y `comandapro-contenedores` en `UP` |
-| [21-grafana-dashboard.png](capturas/21-grafana-dashboard.png) | Los seis paneles de observabilidad |
-| [25-github-actions.png](capturas/25-github-actions.png) | Pipeline aprobado de GitHub Actions |
+| [03-docker-compose-ps.png](capturas/03-docker-compose-ps.png) | Actualizado: seis contenedores incluyendo cAdvisor |
+| [19-prometheus-targets.png](capturas/19-prometheus-targets.png) | Actualizado: dos objetivos de monitoreo en `UP` |
+| [21-grafana-dashboard.png](capturas/21-grafana-dashboard.png) | Actualizado: seis paneles, con gráficos de API y contenedores |
+| [25-github-actions.png](capturas/25-github-actions.png) | **Pendiente de actualizar:** sigue mostrando una ejecución antigua |
 
-No he reemplazado todavía estos cuatro archivos antiguos. Las capturas actualizadas se obtuvieron el **30 de octubre de 2026** y deben sustituirse conservando sus nombres para que los enlaces sigan funcionando.
+Para cerrar las capturas finales necesito reemplazar `25-github-actions.png` por una captura de la [ejecución #13 aprobada](https://github.com/RoxyRg/ComandaPro/actions/runs/41112524663) y adjuntar capturas de Render con el servicio `Live` y la base PostgreSQL `Available`.
 
 ## Evidencia remota comprobable
 
