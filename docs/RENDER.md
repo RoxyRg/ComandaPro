@@ -11,13 +11,13 @@ El archivo `render.yaml` define un servicio Docker que sirve React, FastAPI y So
 5. Cuando Render solicite `COMANDAPRO_ADMIN_PASSWORD`, establece una contraseña fuerte que no hayas usado antes. No la subas a Git ni la compartas en capturas.
 6. Aplica el Blueprint y espera hasta comprobar que los servicios aparecen saludables. Abre la dirección pública `https://...onrender.com` que Render asigne y comprueba `/api/health`.
 
-La contraseña para usuarios de ejemplo se genera automáticamente. La interfaz pública oculta los datos de acceso de demostración, a diferencia de la instalación académica local.
+Las tres cuentas operativas iniciales usan la contraseña de demostración publicada en el README, mientras que la cuenta de administración utiliza un secreto separado. La interfaz pública oculta las credenciales, aunque figuran en la documentación para la evaluación. Para usuarios ya creados, restablece las claves desde **Usuarios y permisos** o usa temporalmente `COMANDAPRO_RESET_DEMO_PASSWORDS_ON_STARTUP=true` y luego vuelve a `false`.
 
 ## Consideraciones técnicas
 
 - Render construye la imagen con `Dockerfile.render` usando la raíz del repositorio como contexto: compila React y ejecuta FastAPI, que entrega los archivos estáticos y la API por el mismo puerto, conservando Socket.IO.
 - Render facilita la URL interna de PostgreSQL en `DATABASE_URL`; el backend la adapta al controlador `psycopg`.
-- `JWT_SECRET` y la contraseña de demostración se generan en Render; `COOKIE_SECURE=true` solo permite cookies seguras bajo HTTPS.
+- `JWT_SECRET` se genera en Render; `COMANDAPRO_DEMO_PASSWORD` está definido solo para las cuentas operativas públicas de evaluación y `COMANDAPRO_ADMIN_PASSWORD` permanece privado. `COOKIE_SECURE=true` solo permite cookies seguras bajo HTTPS.
 - GitHub Actions sigue realizando las pruebas y publicando imágenes en GHCR de forma independiente. Render construye directamente desde GitHub y espera comprobaciones correctas para iniciar nuevos despliegues.
 - **Render Free no ejecuta el Docker Compose de seis servicios.** Prometheus, Grafana y cAdvisor continúan funcionando mediante `docker-compose.yml` en el entorno local. Render ofrece logs y métricas básicos para su servicio.
 - Render Free suspende el servicio web tras 15 minutos de inactividad. El siguiente acceso lo reactiva con demora.

@@ -172,17 +172,16 @@ Grafana obtiene datos de Prometheus mediante configuración aprovisionada. Sus c
 
 El seed inicial crea una cuenta ADMIN y tres usuarios operativos en ComandaPro Centro.
 
-| Rol | Correo |
-|---|---|
-| ADMIN | `admin@comandapro.local` |
-| MESERO | `mesero@comandapro.local` |
-| COCINA | `cocina@comandapro.local` |
-| CAJERO | `cajero@comandapro.local` |
+| Rol | Correo | Contraseña de demostración |
+|---|---|---|
+| ADMIN | `admin@comandapro.local` | Privada: `COMANDAPRO_ADMIN_PASSWORD` (Render / .env) |
+| MESERO | `mesero@comandapro.local` | `DemoComandaPro2026!` |
+| COCINA | `cocina@comandapro.local` | `DemoComandaPro2026!` |
+| CAJERO | `cajero@comandapro.local` | `DemoComandaPro2026!` |
 
-- ADMIN: usa `COMANDAPRO_ADMIN_PASSWORD` del archivo `.env` (valor de ejemplo inicial `CambiaComanda2026!`).
-- Los otros tres roles: usan `COMANDAPRO_DEMO_PASSWORD` (valor de ejemplo inicial `DemoComanda2026!`).
+En el entorno público de evaluación: [ComandaPro en Render](https://comandapro-demo.onrender.com). Estas son **credenciales públicas y exclusivamente de demostración**: cualquier persona con el enlace puede utilizar las cuentas operativas y modificar pedidos, inventario o cobros simulados. No almacenar información real de clientes ni usarlas para operar un restaurante. El administrador mantiene una contraseña privada diferente y no publicada.
 
-Estas contraseñas están publicadas solo como valores de demostración local para que se pueda comprobar la interfaz. **Cámbialas antes de cualquier despliegue no local.**
+La contraseña inicial de nuevas instalaciones se controla con `COMANDAPRO_DEMO_PASSWORD`; cuentas ya existentes conservan su hash salvo que administración las restablezca. Para una rotación puntual en la instancia de pruebas, `COMANDAPRO_RESET_DEMO_PASSWORDS_ON_STARTUP=true` actualiza solamente las tres cuentas iniciales predeterminadas al arrancar; debe volver a `false` inmediatamente después. En máquinas existentes, ajusta `.env` si deseas el mismo valor local.
 
 ### Paso 6. Probar el flujo principal
 

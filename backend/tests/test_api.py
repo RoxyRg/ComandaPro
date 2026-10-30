@@ -100,9 +100,9 @@ def test_branch_scoping_for_operational_tables():
 
 def test_each_role_completes_end_to_end_order_kitchen_payment_flow():
     with make_client() as client:
-        mesero = {"Authorization": f"Bearer {login(client, 'mesero@comandapro.local', 'DemoComanda2026!')}"}
-        cocina = {"Authorization": f"Bearer {login(client, 'cocina@comandapro.local', 'DemoComanda2026!')}"}
-        cajero = {"Authorization": f"Bearer {login(client, 'cajero@comandapro.local', 'DemoComanda2026!')}"}
+        mesero = {"Authorization": f"Bearer {login(client, 'mesero@comandapro.local', 'DemoComandaPro2026!')}"}
+        cocina = {"Authorization": f"Bearer {login(client, 'cocina@comandapro.local', 'DemoComandaPro2026!')}"}
+        cajero = {"Authorization": f"Bearer {login(client, 'cajero@comandapro.local', 'DemoComandaPro2026!')}"}
         admin = {"Authorization": f"Bearer {login(client)}"}
 
         assert client.get("/api/auth/me", headers=mesero).json()["rol"] == "MESERO"
@@ -164,24 +164,59 @@ def test_each_role_completes_end_to_end_order_kitchen_payment_flow():
 def test_admin_can_reset_demo_user_password_without_affecting_other_roles():
     with make_client() as client:
         admin = {"Authorization": f"Bearer {login(client)}"}
-        old_role_password = "DemoComanda2026!"
+        old_role_password = "DemoComandaPro2026!"
         mesero = {"Authorization": f"Bearer {login(client, 'mesero@comandapro.local', old_role_password)}"}
         assert client.post("/api/admin/usuarios/1/reset-password", headers=mesero, json={
-            "nueva": "NuevaDemoComanda2026!"
+            "nueva": "NuevaDemoComandaPro2026!"
         }).status_code == 403
 
         users = client.get("/api/admin/usuarios", headers=admin).json()
         account = next(x for x in users if x["correo"] == "cocina@comandapro.local")
         reset = client.post(f"/api/admin/usuarios/{account['id']}/reset-password", headers=admin, json={
-            "nueva": "NuevaDemoComanda2026!"
+            "nueva": "NuevaDemoComandaPro2026!"
         })
         assert reset.status_code == 200, reset.text
         assert client.post("/api/auth/login", json={
             "correo": account["correo"], "password": old_role_password
         }).status_code == 401
-        assert login(client, account["correo"], "NuevaDemoComanda2026!")
+        assert login(client, account["correo"], "NuevaDemoComandaPro2026!")
         assert login(client, "mesero@comandapro.local", old_role_password)
 
+
+
+def test_demo_user_password_reset_is_opt_in_and_keeps_custom_accounts(monkeypatch):
+    from app.main import _seed_database
+    from app.models import Rol
+    monkeypatch.setenv("COMANDAPRO_DEMO_PASSWORD", "ClaveDemoAnterior2026*")
+    with make_client() as client:
+        admin_token = login(client)
+        admin = {"Authorization": f"Bearer {admin_token}"}
+        accounts = client.get("/api/admin/usuarios", headers=admin).json()
+        mesero = next(u for u in accounts if u["correo"] == "mesero@comandapro.local")
+        cocina = next(u for u in accounts if u["correo"] == "cocina@comandapro.local")
+        cajero = next(u for u in accounts if u["correo"] == "cajero@comandapro.local")
+
+        # Crear una clave personalizada, que ningun reinicio normal debe sustituir.
+        custom = client.post(f"/api/admin/usuarios/{cajero['id']}/reset-password", headers=admin,
+                             json={"nueva": "PersonalizadaCajero2026*"})
+        assert custom.status_code == 200, custom.text
+        monkeypatch.setenv("COMANDAPRO_DEMO_PASSWORD", "DemoComandaPro2026!")
+
+        with client.app.state.SessionLocal() as db:
+            _seed_database(db, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+        assert login(client, mesero["correo"], "ClaveDemoAnterior2026*")
+        assert login(client, cocina["correo"], "ClaveDemoAnterior2026*")
+        assert login(client, cajero["correo"], "PersonalizadaCajero2026*")
+
+        monkeypatch.setenv("COMANDAPRO_RESET_DEMO_PASSWORDS_ON_STARTUP", "true")
+        with client.app.state.SessionLocal() as db:
+            _seed_database(db, ADMIN_EMAIL, ADMIN_PASSWORD)
+        assert client.post("/api/auth/login", json={"correo":mesero["correo"],"password":"ClaveDemoAnterior2026*"}).status_code == 401
+        assert login(client, mesero["correo"], "DemoComandaPro2026!")
+        assert login(client, cocina["correo"], "DemoComandaPro2026!")
+        assert login(client, cajero["correo"], "DemoComandaPro2026!")
+        assert login(client)
 
 def test_order_stock_kitchen_and_split_payment_lifecycle():
     with make_client() as client:
@@ -302,7 +337,7 @@ def test_sales_excel_export_has_valid_xlsx_signature():
 
 def test_mesero_cannot_access_admin_user_management():
     with make_client() as client:
-        token = login(client, "mesero@comandapro.local", "DemoComanda2026!")
+        token = login(client, "mesero@comandapro.local", "DemoComandaPro2026!")
         response = client.get("/api/admin/usuarios", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
 

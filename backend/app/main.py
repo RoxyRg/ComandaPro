@@ -336,11 +336,20 @@ def _seed_database(session: Session, admin_email: str, admin_password: str) -> N
         # Migra únicamente la contraseña inicial predeterminada.
         # No sustituye una contraseña que ya haya sido personalizada.
         admin_user.password_hash = hash_password(admin_password)
-    demo_password = os.getenv("COMANDAPRO_DEMO_PASSWORD", "DemoComanda2026!")
+    demo_password = os.getenv("COMANDAPRO_DEMO_PASSWORD", "DemoComandaPro2026!")
+    # La regeneracion de claves solo ocurre si se solicita expresamente;
+    # evita sobrescribir claves cambiadas por usuarios en reinicios normales.
+    reset_demo = os.getenv("COMANDAPRO_RESET_DEMO_PASSWORDS_ON_STARTUP", "false").lower() == "true"
     for role_name, email_prefix in (("MESERO", "mesero"), ("COCINA", "cocina"), ("CAJERO", "cajero")):
         email = f"{email_prefix}@comandapro.local"
-        if not session.query(Usuario).filter_by(correo=email).one_or_none():
+        demo_user = session.query(Usuario).filter_by(correo=email).one_or_none()
+        if demo_user is None:
             session.add(Usuario(nombre=f"Usuario {role_name.title()}", correo=email, password_hash=hash_password(demo_password), rol_id=roles[role_name].id, sucursal_id=1, activo=True))
+        elif reset_demo and demo_user.rol_id == roles[role_name].id and demo_user.nombre == f"Usuario {role_name.title()}":
+            demo_user.password_hash = hash_password(demo_password)
+            session.query(RefreshToken).filter(RefreshToken.usuario_id == demo_user.id, RefreshToken.revocado.is_(False)).update(
+                {RefreshToken.revocado: True}, synchronize_session=False
+            )
     session.commit()
 
 

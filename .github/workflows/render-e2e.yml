@@ -1,0 +1,21 @@
+name: Prueba integral manual en Render
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    name: Mesero, cocina y cajero en Render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Obtener codigo
+        uses: actions/checkout@v4
+      - name: Validar flujo completo en la nube
+        env:
+          COMANDAPRO_URL: https://comandapro-demo.onrender.com
+          COMANDAPRO_DEMO_PASSWORD: ${{ secrets.RENDER_DEMO_PASSWORD }}
+        run: python3 scripts/smoke_render_roles.py
