@@ -45,6 +45,38 @@ def test_refresh_rotates_and_revokes_old_token():
         assert reused.status_code == 401
 
 
+def test_password_change_requires_current_password_and_revokes_refresh_tokens():
+    with make_client() as client:
+        token = login(client)
+        headers = {"Authorization": f"Bearer {token}"}
+        old_refresh = client.cookies.get("comandapro_refresh")
+        assert old_refresh
+        wrong = client.post("/api/auth/change-password", headers=headers, json={
+            "actual": "contraseña-equivocada", "nueva": "NuevaClaveSegura2026*",
+        })
+        assert wrong.status_code == 401
+        weak = client.post("/api/auth/change-password", headers=headers, json={
+            "actual": ADMIN_PASSWORD, "nueva": "corta",
+        })
+        assert weak.status_code == 422
+        same = client.post("/api/auth/change-password", headers=headers, json={
+            "actual": ADMIN_PASSWORD, "nueva": ADMIN_PASSWORD,
+        })
+        assert same.status_code == 400
+
+        changed = client.post("/api/auth/change-password", headers=headers, json={
+            "actual": ADMIN_PASSWORD, "nueva": "NuevaClaveSegura2026*",
+        })
+        assert changed.status_code == 200, changed.text
+        assert client.post("/api/auth/login", json={
+            "correo": ADMIN_EMAIL, "password": ADMIN_PASSWORD,
+        }).status_code == 401
+        assert client.post("/api/auth/refresh", cookies={
+            "comandapro_refresh": old_refresh,
+        }).status_code == 401
+        assert login(client, ADMIN_EMAIL, "NuevaClaveSegura2026*")
+
+
 def test_branch_scoping_for_operational_tables():
     with make_client() as client:
         admin = login(client)

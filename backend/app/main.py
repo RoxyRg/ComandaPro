@@ -121,6 +121,11 @@ class LoginInput(BaseModel):
     password: str
 
 
+class PasswordChangeInput(BaseModel):
+    actual: str
+    nueva: str = Field(min_length=16, max_length=128)
+
+
 class RoleInput(BaseModel):
     nombre: str = Field(min_length=2, max_length=40, pattern="^[A-Za-zÁÉÍÓÚÑáéíóúñ_ ]+$")
 
@@ -533,6 +538,20 @@ def create_app(database_url: str | None = None, initialize: bool = True) -> Fast
         response.status_code = 204
         response.body = b""
         return response
+
+    @app.post("/api/auth/change-password")
+    def change_password(body: PasswordChangeInput, response: Response, user: Usuario = Depends(current_user), db: Session = Depends(get_db)):
+        if not verify_password(body.actual, user.password_hash):
+            raise HTTPException(status_code=401, detail="La contraseña actual es incorrecta")
+        if body.actual == body.nueva:
+            raise HTTPException(status_code=400, detail="La nueva contraseña debe ser diferente")
+        user.password_hash = hash_password(body.nueva)
+        db.query(RefreshToken).filter(RefreshToken.usuario_id == user.id, RefreshToken.revocado.is_(False)).update(
+            {RefreshToken.revocado: True}, synchronize_session=False
+        )
+        db.commit()
+        response.delete_cookie("comandapro_refresh", path="/api/auth")
+        return {"mensaje": "Contraseña actualizada. Inicia sesión nuevamente."}
 
     @app.get("/api/auth/me")
     def me(user: Usuario = Depends(current_user), db: Session = Depends(get_db)):
